@@ -1,0 +1,18 @@
+# IOC Checker - Sample IOC List
+# Publicly documented indicators for testing purposes only.
+# Sources: Public threat intel feeds, abuse reports.
+
+# --- Known abused IPs (Tor exit nodes / public blocklists) ---
+185.220.101.45
+45.95.168.191
+194.165.16.11
+
+# --- Test domains (not real targets) ---
+malware-c2.example.com
+phishing-login.example.net
+
+# --- Known malware hashes (public samples) ---
+# EICAR antivirus test file (MD5)
+44d88612fea8a8f36de82e1278abb02f
+# WannaCry ransomware (SHA256 - publicly documented)
+24d004a104d4d54034dbcffc2a4b19a11f39008a575aa614ea04703480b1022c
