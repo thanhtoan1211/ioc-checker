@@ -1,0 +1,19 @@
+# Environment — NEVER commit real API keys
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Output files
+*.json
+*.csv
+
+# IDE
+.vscode/
+.idea/

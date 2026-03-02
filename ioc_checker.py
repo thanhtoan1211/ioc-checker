@@ -19,7 +19,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import requests
 from dotenv import load_dotenv
@@ -39,8 +39,11 @@ VT_BASE    = "https://www.virustotal.com/api/v3"
 ABUSE_BASE = "https://api.abuseipdb.com/api/v2"
 
 # ── Regex patterns ────────────────────────────────────────────────────────────
-RE_IPV4   = re.compile(r"^(\d{1,3}\.){3}\d{1,3}$")
-RE_DOMAIN = re.compile(r"^(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}$")
+RE_IPV4   = re.compile(r"^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$")
+RE_DOMAIN = re.compile(r"^(?:[a-zA-Z0-9_-]+\.)+[a-zA-Z]{2,}$")
+
+# VirusTotal free tier: 4 requests/min → 15s between calls
+VT_SLEEP = 15
 RE_MD5    = re.compile(r"^[a-fA-F0-9]{32}$")
 RE_SHA1   = re.compile(r"^[a-fA-F0-9]{40}$")
 RE_SHA256 = re.compile(r"^[a-fA-F0-9]{64}$")
@@ -72,9 +75,16 @@ class VTClient:
         self.session.headers["x-apikey"] = key
 
     def get(self, path: str) -> Dict:
-        r = self.session.get(f"{VT_BASE}/{path}", timeout=15)
-        r.raise_for_status()
-        return r.json()
+        for attempt in range(3):
+            r = self.session.get(f"{VT_BASE}/{path}", timeout=15)
+            if r.status_code == 429:
+                wait = int(r.headers.get("Retry-After", 60))
+                console.print(f"[yellow]VT rate limit — waiting {wait}s...[/yellow]")
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            return r.json()
+        raise RuntimeError("VirusTotal rate limit exceeded after 3 retries")
 
     def check_ip(self, ip):     return self.get(f"ip_addresses/{ip}")
     def check_domain(self, d):  return self.get(f"domains/{d}")
@@ -173,23 +183,23 @@ class IOCChecker:
             if self.vt:
                 try:    record["sources"].append(parse_vt(self.vt.check_ip(ioc), "ip"))
                 except Exception as e: record["sources"].append(err_result("VirusTotal", e))
-                time.sleep(0.25)
+                time.sleep(VT_SLEEP)
             if self.abuse:
                 try:    record["sources"].append(parse_abuse(self.abuse.check_ip(ioc)))
                 except Exception as e: record["sources"].append(err_result("AbuseIPDB", e))
-                time.sleep(0.25)
+                time.sleep(0.5)
 
         elif ioc_type == "domain":
             if self.vt:
                 try:    record["sources"].append(parse_vt(self.vt.check_domain(ioc), "domain"))
                 except Exception as e: record["sources"].append(err_result("VirusTotal", e))
-                time.sleep(0.25)
+                time.sleep(VT_SLEEP)
 
         elif ioc_type == "hash":
             if self.vt:
                 try:    record["sources"].append(parse_vt(self.vt.check_hash(ioc), "hash"))
                 except Exception as e: record["sources"].append(err_result("VirusTotal", e))
-                time.sleep(0.25)
+                time.sleep(VT_SLEEP)
 
         verdicts = [s.get("verdict") for s in record["sources"]]
         record["overall"] = (
@@ -315,6 +325,7 @@ def main():
         sys.exit(1)
     if not vt_key:    console.print("[yellow]VIRUSTOTAL_API_KEY not set — VT checks skipped.[/yellow]")
     if not abuse_key: console.print("[yellow]ABUSEIPDB_API_KEY not set — AbuseIPDB checks skipped.[/yellow]")
+    if vt_key:        console.print(f"[dim]VT free tier: {VT_SLEEP}s delay between lookups (4 req/min limit)[/dim]")
 
     checker = IOCChecker(vt_key, abuse_key)
 
